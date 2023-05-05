@@ -1,9 +1,11 @@
 #include "md5.h"
 #include <iostream>
 
-void main(int argc, char **argv)
+int main(int argc, char **argv)
 {
-   crypt::md5 md5sum;
+   (void)argc;
+   (void)argv;
+   xkbeyer::md5 md5sum;
    md5sum.process("The quick");
    auto result = md5sum.getHash();
    std::string expected = "912d57cea222bc1730dd531b9d6afbb6";
@@ -58,4 +60,5 @@ void main(int argc, char **argv)
    } else {
       std::cout << "Failed:" << expected << " vs " << result << '\n';
    }
+   return 0;
 }

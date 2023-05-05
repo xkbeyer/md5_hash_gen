@@ -6,8 +6,9 @@
 #include <iostream>
 #include <sstream>
 #include <iomanip>
+#include <algorithm>
 
-namespace crypt { 
+namespace xkbeyer { 
    namespace {
       // Constants are the integer part of the sines of integers (in radians) * 2^32.
       std::array<std::uint32_t, 64> const k {0xd76aa478, 0xe8c7b756, 0x242070db, 0xc1bdceee, 0xf57c0faf, 0x4787c62a, 0xa8304613, 0xfd469501, 0x698098d8, 0x8b44f7af,
@@ -25,7 +26,7 @@ namespace crypt {
       #include <bit>
       constexpr std::uint32_t LEFTROTATE(std::uint32_t x, std::uint32_t shf)
       {
-         return std::rotl(x, shf);
+         return std::rotl(x, static_cast<std::int32_t>(shf)); // STL takes an int as shift value.
       }
 
 #else
@@ -54,8 +55,6 @@ namespace crypt {
          padBuffer.fill(0);
          size_t const copyBytes = input.length() % 64ULL;
          if (copyBytes != 0ULL) {
-            size_t const remainingBytes = 64ULL - copyBytes;
-            size_t const padBytes = remainingBytes % 4ULL;
             size_t const offset = (input.size() / 64ULL) * 64ULL;
             std::copy_n(&input[offset], copyBytes, std::begin(padBuffer));
          }
@@ -63,27 +62,14 @@ namespace crypt {
          return padBuffer;
       }
     
-      std::array<char, 64> generateExtraBlock(size_t inputSize)
-      {
-         std::array<char, 64> extraBlock;
-         // pad last block append 10...
-         // pad additional block 0....length(64bit)
-         extraBlock.fill(0);
-         if (((inputSize * 8UL) % 512) == 0UL) {
-            // Last block is exact 512, so extra buffer starts with 10.....
-            extraBlock[0] = 0x80;
-         }
-         return extraBlock;
-      }
-
       void addMsgSize(size_t const msgLength, std::array<char, 64>& block)
       {
          // Input length stored in the last 64bit.
-         std::uint64_t const lengthInBits = msgLength * 8UL;
-         block[56] = lengthInBits & 0x000000FFUL;
-         block[57] = (lengthInBits & 0x0000FF00UL) >> 8UL;
-         block[58] = (lengthInBits & 0x00FF0000UL) >> 16UL;
-         block[59] = (lengthInBits & 0xFF000000UL) >> 24UL;
+         std::uint32_t const lengthInBits = static_cast<std::uint32_t>(msgLength) * 8UL;
+         block[56] = static_cast<char>(lengthInBits & 0x000000FFUL);
+         block[57] = static_cast<char>((lengthInBits & 0x0000FF00UL) >> 8UL);
+         block[58] = static_cast<char>((lengthInBits & 0x00FF0000UL) >> 16UL);
+         block[59] = static_cast<char>((lengthInBits & 0xFF000000UL) >> 24UL);
       }
 
       std::uint32_t getUint32(std::string_view buffer)
@@ -99,53 +85,81 @@ namespace crypt {
       std::array<std::uint32_t, 16> blockOf16Uint32(std::string_view block)
       {
          std::array<std::uint32_t, 16> M{0UL};
-         size_t index = 0UL;
+         size_t index = 0ULL;
          // Break 512 bit chunk in to 16 32bit pieces.
 
-         for (size_t i = 0UL; i < (64UL / 4UL); ++i) {
-            M[i] = getUint32({&block[index], 4});
-            index += 4UL;
+         for (size_t i = 0ULL; i < (64ULL / 4ULL); ++i) {
+            M[i] = getUint32({&block[index], 4u});
+            index += 4ULL;
          }
          return M;
       }
+
    } // namespace
 
-
-   void md5::process(std::string_view buffer)
+   class BlockReader final
    {
-      h = {0x67452301UL, 0xefcdab89UL, 0x98badcfeUL, 0x10325476UL};
-      size_t blocks = buffer.size() / 64UL + 1ULL; // Blocks have a size of 64 byte.
-      bool needAdditionalBlock = ((buffer.size() * 8UL) % 512) > 448UL;
-      std::array<char, 64> padBuffer;
-      std::array<char, 64> extraBuffer;
-      size_t padBlockNo{blocks - 1ULL};
-      size_t extraBlockNo{std::numeric_limits<size_t>::max()};
-      padBuffer = generatePadBuffer(buffer);
-      if (needAdditionalBlock) {
-         extraBuffer = generateExtraBlock(buffer.size());
-         ++blocks;
-         extraBlockNo = blocks - 1ULL;
+   public:
+      BlockReader(std::string_view inputBuffer) : buffer(inputBuffer)
+      {
+         blocks = buffer.size() / 64ULL + 1ULL; // Blocks have a size of 64 byte.
+         bool needAdditionalBlock = ((buffer.size() * 8ULL) % 512ULL) > 448ULL;
+         padBlockNo = blocks - 1ULL;
+         padBuffer = generatePadBuffer(buffer);
+         if (needAdditionalBlock) {
+            ++blocks;
+            extraBlockNo = blocks - 1ULL;
+         } else {
+            addMsgSize(buffer.size(), padBuffer);
+         }
       }
-      addMsgSize(buffer.size(), needAdditionalBlock ? extraBuffer : padBuffer);
 
-      size_t bufferOffset = 0ULL;
-      for (size_t block = 0ULL; block < blocks; ++block) {
+      std::array<std::uint32_t, 16> getNextBlock() noexcept
+      {
          std::array<std::uint32_t, 16> M{0UL};
          // no extra block padBlock is blocks - 1
          // extra block = padBlock is blocks -2, extra block is blocks -1
-         if (block == padBlockNo) {
+         if (currentBlock == padBlockNo) {
             M = blockOf16Uint32({&padBuffer[0], 64});
-         } else if (block == extraBlockNo) {
-            M = blockOf16Uint32({&extraBuffer[0], 64});
+         } else if (currentBlock == extraBlockNo) {
+            M.fill(0UL);
+            M[14] = static_cast<std::uint32_t>(buffer.size() * 8ULL);
+            if (((buffer.size() * 8ULL) % 512ULL) == 0ULL) {
+               // Last block is exact 512, so extra buffer starts with 10.....
+               M[0] = 0x80;
+            }
          } else {
             M = blockOf16Uint32({&buffer[bufferOffset], 64});
             bufferOffset += 4ULL * 16ULL;
          }
+         ++currentBlock;
+         return M;
+      }
+
+      size_t getBlockCount() const noexcept { return blocks; }
+   
+   private:
+      std::string_view buffer;
+      size_t currentBlock{0ULL};
+      size_t blocks{0ULL};
+      size_t padBlockNo{0ULL};
+      size_t extraBlockNo{std::numeric_limits<size_t>::max()};
+      std::array<char, 64> padBuffer;
+      size_t bufferOffset{0ULL};
+   };
+
+   void md5::process(std::string_view buffer) noexcept
+   {
+      h = {{0x67452301UL, 0xefcdab89UL, 0x98badcfeUL, 0x10325476UL}};
+      BlockReader reader{buffer};
+
+      for (size_t block = 0ULL; block < reader.getBlockCount(); ++block) {
+         auto M = reader.getNextBlock();
          update(M);
       }
    }
 
-   void md5::update(std::array<std::uint32_t, 16> const& M)
+   void md5::update(std::array<std::uint32_t, 16> const& M) noexcept
    {
       std::uint32_t a = h[0];
       std::uint32_t b = h[1];
@@ -184,16 +198,16 @@ namespace crypt {
       h[3] += d;
    }
 
-   std::string md5::getHash()
+   std::string md5::getHash() noexcept
    {
       // Concatenate h1-4 as hex numbers.
       std::stringstream hash;
       for (auto i = 0UL; i < 4UL; ++i) {
-         hash << std::hex << std::setfill('0') << std::setw(2) << (h[i] & 0x000000FFu) 
-            << std::hex << std::setfill('0') << std::setw(2) << ((h[i] & 0x0000FF00u) >> 8UL) 
-            << std::hex << std::setfill('0') << std::setw(2) << ((h[i] & 0x00FF0000u) >> 16UL) 
-            << std::hex << std::setfill('0') << std::setw(2) << ((h[i] & 0xFF000000u) >> 24UL);
+         hash << std::hex << std::setfill('0') << std::setw(2) << (h[i] & 0x000000FFUL) 
+            << std::hex << std::setfill('0') << std::setw(2) << ((h[i] & 0x0000FF00UL) >> 8UL) 
+            << std::hex << std::setfill('0') << std::setw(2) << ((h[i] & 0x00FF0000UL) >> 16UL) 
+            << std::hex << std::setfill('0') << std::setw(2) << ((h[i] & 0xFF000000UL) >> 24UL);
       }
       return hash.str();
    }
-} // namespace crypt
+} // namespace xkbeyer

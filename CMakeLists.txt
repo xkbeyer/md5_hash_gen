@@ -1,4 +1,4 @@
-CMAKE_MINIMUM_REQUIRED(VERSION 3.23)
+CMAKE_MINIMUM_REQUIRED(VERSION 3.26)
 
 PROJECT(MD5)
 
@@ -11,9 +11,13 @@ set(SRC main.cpp md5.h md5.cpp)
 add_executable(md5 ${SRC})
 
 target_compile_features(md5 PRIVATE cxx_std_20)
-target_compile_definitions(md5 PRIVATE $<$<CONFIG:Debug>:_DEBUG> _CONSOLE)
+target_compile_definitions(md5 PUBLIC $<$<CONFIG:Debug>:_DEBUG> _CONSOLE)
+target_compile_options(md5 PUBLIC 
+    $<$<CXX_COMPILER_ID:MSVC>:/Wall /WX /wd5045>
+    $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-Wall -Wextra -Wpedantic -Werror>
+)
 # Remove unwanted project types in MSVC
 if(MSVC)
-  list(REMOVE_ITEM CMAKE_CONFIGURATION_TYPES MinSizeRel RelWithDebInfo)
-  set_property(DIRECTORY ${PROJECT_SOURCE_DIR} PROPERTY VS_STARTUP_PROJECT md5)
+    list(REMOVE_ITEM CMAKE_CONFIGURATION_TYPES MinSizeRel RelWithDebInfo)
+    set_property(DIRECTORY ${PROJECT_SOURCE_DIR} PROPERTY VS_STARTUP_PROJECT md5)
 endif()
