@@ -37,10 +37,10 @@ namespace xkbeyer {
          return _rotl(x, shf);
       }
 #elif defined(__GNUC__) && defined(__x86_64__) 
-      #include <X86intrin.h>
-      constexpr std::uint32_t LEFTROTATE(std::uint32_t x, std::uint32_t shf)
+      #include <x86intrin.h>
+      std::uint32_t LEFTROTATE(std::uint32_t x, std::uint32_t shf)
       {
-         return _rotl(x, shf);
+         return _rotl(x, static_cast<std::int32_t>(shf));
       }
 #else
       constexpr std::uint32_t LEFTROTATE(std::uint32_t x, std::uint32_t shf)
