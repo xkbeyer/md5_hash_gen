@@ -1,1 +1,8 @@
 **/build*
+**/gcc*
+**/.vs
+**/out
+**/CMakeSettings.json
+**/*.txt
+!**/CMakeLists.txt
+

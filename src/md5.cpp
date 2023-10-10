@@ -1,7 +1,4 @@
 #include "md5.h"
-#include <charconv>
-#include <system_error>
-#include <memory>
 #include <limits>
 #include <iostream>
 #include <sstream>
@@ -22,7 +19,7 @@ namespace xkbeyer {
       std::array<std::uint32_t,64> const r {7, 12, 17, 22, 7, 12, 17, 22, 7, 12, 17, 22, 7, 12, 17, 22, 5, 9,  14, 20, 5, 9,  14, 20, 5, 9,  14, 20, 5, 9,  14, 20,
                             4, 11, 16, 23, 4, 11, 16, 23, 4, 11, 16, 23, 4, 11, 16, 23, 6, 10, 15, 21, 6, 10, 15, 21, 6, 10, 15, 21, 6, 10, 15, 21};
       
-#if __cpp_lib_bitops >= 201907L
+#if defined(__cpp_lib_bitops) && (__cpp_lib_bitops >= 201907L)
       #include <bit>
       constexpr std::uint32_t LEFTROTATE(std::uint32_t x, std::uint32_t shf)
       {
@@ -34,7 +31,7 @@ namespace xkbeyer {
       #include <intrin.h>
       std::uint32_t LEFTROTATE(std::uint32_t x, std::uint32_t shf)
       {
-         return _rotl(x, shf);
+         return static_cast<std::uint32_t>(_rotl(x, static_cast<std::int32_t>(shf)));
       }
 #elif defined(__GNUC__) && defined(__x86_64__) 
       #include <x86intrin.h>
@@ -74,8 +71,7 @@ namespace xkbeyer {
 
       std::uint32_t getUint32(std::string_view buffer)
       {
-         std::uint32_t value{0UL};
-         value = static_cast<std::uint32_t>(buffer[0]) & 0xFFUL;
+         std::uint32_t value = static_cast<std::uint32_t>(buffer[0]) & 0xFFUL;
          value += (static_cast<std::uint32_t>(buffer[1]) & 0xFFUL) << 8UL;
          value += (static_cast<std::uint32_t>(buffer[2]) & 0xFFUL) << 16UL;
          value += (static_cast<std::uint32_t>(buffer[3]) & 0xFFUL) << 24UL;
